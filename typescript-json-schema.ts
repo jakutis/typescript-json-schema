@@ -117,6 +117,7 @@ export interface Definition extends Omit<JSONSchema7, RedefinedFields> {
     propertyOrder?: string[];
     defaultProperties?: string[];
     typeof?: "function";
+    signature?: string;
 
     // Fields that must be redefined because they make use of this definition itself
     items?: DefinitionOrBoolean | DefinitionOrBoolean[];
@@ -1170,7 +1171,7 @@ export class JsonSchemaGenerator {
             (<ts.ObjectType>typ).objectFlags & ts.ObjectFlags.Anonymous
         ) {
             definition.typeof = "function";
-            definition.signature = typ.checker.typeToString(typ);
+            definition.signature = this.tc.typeToString(typ);
             return definition;
         }
 
