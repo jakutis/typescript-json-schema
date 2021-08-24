@@ -1,13 +1,13 @@
-# typescript-json-schema
+This is a fork of https://github.com/YousefED/typescript-json-schema by Vytautas Jakutis.
 
-[![npm version](https://img.shields.io/npm/v/typescript-json-schema.svg)](https://www.npmjs.com/package/typescript-json-schema) ![Test](https://github.com/YousefED/typescript-json-schema/workflows/Test/badge.svg)
+# typescript-json-schema-jakutis
 
 Generate json-schemas from your Typescript sources.
 
 ## Features
 
 - Compiles your Typescript program to get complete type information.
-- Translates required properties, extends, annotation keywords, property initializers as defaults. You can find examples for these features in the [api doc](https://github.com/YousefED/typescript-json-schema/tree/master/api.md) or the [test examples](https://github.com/YousefED/typescript-json-schema/tree/master/test/programs).
+- Translates required properties, extends, annotation keywords, property initializers as defaults.
 
 ## Usage
 
