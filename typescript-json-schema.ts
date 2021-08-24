@@ -117,7 +117,7 @@ export interface Definition extends Omit<JSONSchema7, RedefinedFields> {
     propertyOrder?: string[];
     defaultProperties?: string[];
     typeof?: "function";
-    signature?: string;
+    originalType?: string;
 
     // Fields that must be redefined because they make use of this definition itself
     items?: DefinitionOrBoolean | DefinitionOrBoolean[];
@@ -1142,6 +1142,15 @@ export class JsonSchemaGenerator {
         return name;
     }
 
+    private setOriginalType(definition: Definition, prop?: ts.Symbol) {
+        if (prop) {
+            const declaration = prop.valueDeclaration as ts.PropertyDeclaration;
+            if (declaration && declaration.type) {
+                definition.originalType = ts.createPrinter({removeComments:true}).printNode(ts.EmitHint.Unspecified, declaration.type, declaration.type.getSourceFile());
+            }
+        }
+    }
+
     private recursiveTypeRef = new Map();
 
     private getTypeDefinition(
@@ -1171,7 +1180,7 @@ export class JsonSchemaGenerator {
             (<ts.ObjectType>typ).objectFlags & ts.ObjectFlags.Anonymous
         ) {
             definition.typeof = "function";
-            definition.signature = this.tc.typeToString(typ);
+            this.setOriginalType(definition, prop);
             return definition;
         }
 
@@ -1372,6 +1381,8 @@ export class JsonSchemaGenerator {
         if (otherAnnotations["nullable"]) {
             makeNullable(returnedDefinition);
         }
+
+        this.setOriginalType(returnedDefinition, prop);
 
         return returnedDefinition;
     }
