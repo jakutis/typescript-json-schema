@@ -1170,6 +1170,7 @@ export class JsonSchemaGenerator {
             (<ts.ObjectType>typ).objectFlags & ts.ObjectFlags.Anonymous
         ) {
             definition.typeof = "function";
+            definition.signature = typ.checker.typeToString(typ);
             return definition;
         }
 
