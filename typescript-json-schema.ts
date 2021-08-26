@@ -652,6 +652,8 @@ export class JsonSchemaGenerator {
             } else if (propertyTypeString === "Date" && !this.args.rejectDateType) {
                 definition.type = "string";
                 definition.format = "date-time";
+            } else if (propertyTypeString === "symbol") {
+                definition.type = "symbol";
             } else if (propertyTypeString === "object") {
                 definition.type = "object";
                 definition.properties = {};
@@ -988,7 +990,9 @@ export class JsonSchemaGenerator {
         }
 
         const clazz = <ts.ClassDeclaration>node;
-        const props = this.tc.getPropertiesOfType(clazzType).filter((prop) => {
+        const iWithDeclaredMembers = clazzType as ts.InterfaceTypeWithDeclaredMembers;
+        const allProps = iWithDeclaredMembers.declaredProperties || this.tc.getPropertiesOfType(clazzType)
+        const props = allProps.filter((prop) => {
             // filter never
             const propertyType = this.tc.getTypeOfSymbolAtLocation(prop, node);
             if (ts.TypeFlags.Never === propertyType.getFlags()) {
@@ -1142,11 +1146,51 @@ export class JsonSchemaGenerator {
         return name;
     }
 
+    private resolveUntilReact(node: ts.Node): ts.Node {
+      if (node.getText().startsWith("React.")) {
+        return node;
+      }
+      if (ts.isTypeReferenceNode(node)) {
+        const identifier = node.typeName;
+        if (ts.isIdentifier(identifier)) {
+          const s = this.tc.getExportSpecifierLocalTargetSymbol(identifier);
+          if (s) {
+            const d = this.tc.getDeclaredTypeOfSymbol(s) as ts.TypeReference;
+            const n = d.node;
+            if (n) {
+              return this.resolveUntilReact(n);
+            }
+          }
+        }
+      }
+      if (ts.isIndexedAccessTypeNode(node)) {
+        const identifier = node.objectType.getChildAt(0);
+        const index = node.indexType.getChildAt(0);
+        if (ts.isStringLiteral(index) && ts.isIdentifier(identifier)) {
+          const s = this.tc.getExportSpecifierLocalTargetSymbol(identifier);
+          if (s) {
+            const t = this.tc.getDeclaredTypeOfSymbol(s);
+            for (const prop of this.tc.getPropertiesOfType(t)) {
+              if (prop.getName() === index.text) {
+                const declaration = getCanonicalDeclaration(prop) as ts.PropertyDeclaration;
+                if (declaration && declaration.type) {
+                  return this.resolveUntilReact(declaration.type);
+                }
+              }
+            }
+          }
+        }
+      }
+      return node;
+// this.tc.getDeclaredTypeOfSymbol(this.tc.getExportSpecifierLocalTargetSymbol(node.objectType.typeName))
+    }
+
     private setOriginalType(definition: Definition, prop?: ts.Symbol) {
         if (prop) {
-            const declaration = prop.valueDeclaration as ts.PropertyDeclaration;
+            const declaration = getCanonicalDeclaration(prop) as ts.PropertyDeclaration;
             if (declaration && declaration.type) {
-                definition.originalType = ts.createPrinter({removeComments:true}).printNode(ts.EmitHint.Unspecified, declaration.type, declaration.type.getSourceFile());
+              const resolvedType = this.resolveUntilReact(declaration.type);
+              definition.originalType = ts.createPrinter({removeComments:true}).printNode(ts.EmitHint.Unspecified, resolvedType, resolvedType.getSourceFile());
             }
         }
     }
@@ -1162,6 +1206,7 @@ export class JsonSchemaGenerator {
         pairedSymbol?: ts.Symbol
     ): Definition {
         const definition: Definition = {}; // real definition
+        this.setOriginalType(definition, prop);
 
         // Ignore any number of Readonly and Mutable type wrappings, since they only add and remove readonly modifiers on fields and JSON Schema is not concerned with mutability
         while (
@@ -1355,7 +1400,26 @@ export class JsonSchemaGenerator {
                     definition.type = "object";
                     definition.properties = {};
                 } else {
-                    this.getClassDefinition(typ, definition);
+                    let inheritedTypes: ts.Type[] = [];
+                    if (node) {
+                      const idecl = node as ts.InterfaceDeclaration
+                      if (idecl.heritageClauses) {
+                        inheritedTypes = idecl.heritageClauses.reduce((types, c) => {
+                          return types.concat(c.types.map(t => {
+                            return this.tc.getTypeFromTypeNode(t)
+                          }))
+                        }, inheritedTypes)
+                      }
+                    }
+                    if (inheritedTypes.length > 0) {
+                      const classDefinition: Definition = {}
+                      this.getClassDefinition(typ, classDefinition);
+                      definition.allOf = inheritedTypes
+                        .map(t => this.getTypeDefinition(t))
+                        .concat(classDefinition)
+                    } else {
+                      this.getClassDefinition(typ, definition);
+                    }
                 }
             }
         }
