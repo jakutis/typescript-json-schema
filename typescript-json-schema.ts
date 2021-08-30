@@ -7,6 +7,7 @@ import { JSONSchema7 } from "json-schema";
 export { Program, CompilerOptions, Symbol } from "typescript";
 
 const vm = require("vm");
+const nonStandardFields = true;
 
 const REGEX_FILE_NAME_OR_SPACE = /(\bimport\(".*?"\)|".*?")\.| /g;
 const REGEX_TSCONFIG_NAME = /^.*\.json$/;
@@ -138,6 +139,7 @@ export interface Definition extends Omit<JSONSchema7, RedefinedFields> {
     then?: DefinitionOrBoolean;
     else?: DefinitionOrBoolean;
     allOf?: DefinitionOrBoolean[];
+    allOfOverrides?: boolean;
     anyOf?: DefinitionOrBoolean[];
     oneOf?: DefinitionOrBoolean[];
     not?: DefinitionOrBoolean;
@@ -971,6 +973,9 @@ export class JsonSchemaGenerator {
             }
         } else {
             definition.allOf = schemas;
+            if (nonStandardFields) {
+              definition.allOfOverrides = true;
+            }
         }
         return definition;
     }
@@ -991,7 +996,7 @@ export class JsonSchemaGenerator {
 
         const clazz = <ts.ClassDeclaration>node;
         const iWithDeclaredMembers = clazzType as ts.InterfaceTypeWithDeclaredMembers;
-        const allProps = iWithDeclaredMembers.declaredProperties || this.tc.getPropertiesOfType(clazzType)
+        const allProps = iWithDeclaredMembers.declaredProperties || this.tc.getPropertiesOfType(clazzType);
         const props = allProps.filter((prop) => {
             // filter never
             const propertyType = this.tc.getTypeOfSymbolAtLocation(prop, node);
@@ -1186,11 +1191,17 @@ export class JsonSchemaGenerator {
     }
 
     private setOriginalType(definition: Definition, prop?: ts.Symbol) {
+        if (!nonStandardFields) {
+            return;
+        }
         if (prop) {
-            const declaration = getCanonicalDeclaration(prop) as ts.PropertyDeclaration;
-            if (declaration && declaration.type) {
-              const resolvedType = this.resolveUntilReact(declaration.type);
-              definition.originalType = ts.createPrinter({removeComments:true}).printNode(ts.EmitHint.Unspecified, resolvedType, resolvedType.getSourceFile());
+            try {
+                const declaration = getCanonicalDeclaration(prop) as ts.PropertyDeclaration;
+                if (declaration && declaration.type) {
+                  const resolvedType = this.resolveUntilReact(declaration.type);
+                  definition.originalType = ts.createPrinter({removeComments:true}).printNode(ts.EmitHint.Unspecified, resolvedType, resolvedType.getSourceFile());
+                }
+            } catch {
             }
         }
     }
@@ -1402,21 +1413,24 @@ export class JsonSchemaGenerator {
                 } else {
                     let inheritedTypes: ts.Type[] = [];
                     if (node) {
-                      const idecl = node as ts.InterfaceDeclaration
+                      const idecl = node as ts.InterfaceDeclaration;
                       if (idecl.heritageClauses) {
                         inheritedTypes = idecl.heritageClauses.reduce((types, c) => {
                           return types.concat(c.types.map(t => {
-                            return this.tc.getTypeFromTypeNode(t)
-                          }))
-                        }, inheritedTypes)
+                            return this.tc.getTypeFromTypeNode(t);
+                          }));
+                        }, inheritedTypes);
                       }
                     }
                     if (inheritedTypes.length > 0) {
-                      const classDefinition: Definition = {}
+                      const classDefinition: Definition = {};
                       this.getClassDefinition(typ, classDefinition);
                       definition.allOf = inheritedTypes
                         .map(t => this.getTypeDefinition(t))
-                        .concat(classDefinition)
+                        .concat(classDefinition);
+                      if (nonStandardFields) {
+                        definition.allOfOverrides = true;
+                      }
                     } else {
                       this.getClassDefinition(typ, definition);
                     }
